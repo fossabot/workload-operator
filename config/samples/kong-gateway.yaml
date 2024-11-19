@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-gateway-config
+data:
+  kong.yml: |-
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+    - host: httpbin.org
+      name: httpbin
+      port: 443
+      protocol: https
+      routes:
+      - name: httpbin
+        paths:
+        - /
+      plugins:
+        - name: pre-function
+          config:
+            access:
+              - kong.service.request.set_header("x-forwarded-proxy-name",kong.node.get_hostname())
+---
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  labels:
+    tier: app
+  name: kong-gateway
+spec:
+  template:
+    metadata:
+      labels:
+        tier: app
+    spec:
+      runtime:
+        resources:
+          instanceType: datumcloud/d1-standard-2
+        sandbox:
+          containers:
+            - name: kong
+              image: docker.io/kong/kong-gateway:3.8.0.0
+              ports:
+                - name: http
+                  port: 8000
+              env:
+                - name: KONG_DATABASE
+                  value: "off"
+                - name: KONG_DECLARATIVE_CONFIG
+                  value: /kong/declarative/kong.yml
+                - name: KONG_PROXY_ACCESS_LOG
+                  value: /dev/stdout
+                - name: KONG_ADMIN_ACCESS_LOG
+                  value: /dev/stdout
+                - name: KONG_PROXY_ERROR_LOG
+                  value: /dev/stderr
+                - name: KONG_ADMIN_ERROR_LOG
+                  value: /dev/stderr
+                # See https://docs.konghq.com/gateway/latest/reference/configuration/#proxy_listen
+                - name: KONG_PROXY_LISTEN
+                # TODO(jreese) couldnt listen on port 80 due to priviledged port issue, look into how to address that.
+                # via linux capabilities / etc.
+                  value: 0.0.0.0:8000
+                - name: KONG_ADMIN_LISTEN
+                  value: 0.0.0.0:8001
+                - name: KONG_ADMIN_GUI_URL
+                  # Instead of a pre-defined environment variable, we should
+                  # have downward API features.
+                  value: "http://$(DATUM_PRIMARY_EXTERNAL_IP):8002"
+              volumeAttachments:
+                - name: config
+                  mountPath: /kong/declarative/
+            # GCP address dns
+            # 105.68.174.34.bc.googleusercontent.com.
+            # - name: certbot
+            #   image: docker.io/certbot/certbot
+      networkInterfaces:
+      - network:
+          name: default
+        networkPolicy:
+          ingress:
+            - ports:
+              - port: 8000
+              from:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+            # Admin API and UI
+            - ports:
+              - port: 8001
+                endPort: 8002
+              from:
+                - ipBlock:
+                    cidr: 107.210.0.79/32
+      # - network: secondary
+      volumes:
+        - name: config
+          configMap:
+            name: kong-gateway-config
+  placements:
+  - name: us
+    cityCodes:
+    - DFW
+    - DLS
+    scaleSettings:
+      minReplicas: 1
+  - name: eu
+    cityCodes:
+    - LHR
+    scaleSettings:
+      minReplicas: 1
+  # Think about multiple gateways per workload?
+  # gateways:
+  #   - name: external
+  gateway:
+    # TODO(jreese) network policy on gateway?
+    #   - Doesn't look like that'd be possible on GCP without using Cloud Armor
+    #     in front of the external load balancers.
+    template:
+      spec:
+        gatewayClassName: datum-external-global-proxy
+        listeners:
+          - name: global-ingress
+            port: 80
+            protocol: TCP
+    tcpRoutes:
+      - parentRefs:
+          - sectionName: global-ingress
+        rules:
+          - backendRefs:
+            - name: http
