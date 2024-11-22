@@ -1,0 +1,61 @@
+# https://raw.githubusercontent.com/kubernetes-sigs/cluster-inventory-api/refs/heads/main/config/crd/bases/multicluster.x-k8s.io_clusterprofiles.yaml
+---
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: gcp-us-south1-a
+ namespace: datum
+ labels:
+   x-k8s.io/cluster-manager: infra-provider-gcp
+spec:
+  displayName: GCP Zone us-south1-a - DFW
+  clusterManager:
+    name: infra-provider-gcp
+status:
+  properties:
+    - name: compute.datumapis.com/infra-provider-gcp/project
+      value: datum-cloud-poc-1
+    - name: compute.datumapis.com/infra-provider-gcp/region
+      value: us-south1
+    - name: compute.datumapis.com/infra-provider-gcp/zone
+      value: us-south1-a
+---
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: gcp-us-west1-a
+ namespace: datum
+ labels:
+   x-k8s.io/cluster-manager: infra-provider-gcp
+spec:
+  displayName: GCP Zone us-west1-a - DLS
+  clusterManager:
+    name: infra-provider-gcp
+status:
+  properties:
+    - name: compute.datumapis.com/infra-provider-gcp/project
+      value: datum-cloud-poc-1
+    - name: compute.datumapis.com/infra-provider-gcp/region
+      value: us-west1
+    - name: compute.datumapis.com/infra-provider-gcp/zone
+      value: us-west1-a
+---
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: gcp-europe-west2-a
+ namespace: datum
+ labels:
+   x-k8s.io/cluster-manager: infra-provider-gcp
+spec:
+  displayName: GCP Zone europe-west2-a - LHR
+  clusterManager:
+    name: infra-provider-gcp
+status:
+  properties:
+    - name: compute.datumapis.com/infra-provider-gcp/project
+      value: datum-cloud-poc-1
+    - name: compute.datumapis.com/infra-provider-gcp/region
+      value: europe-west2
+    - name: compute.datumapis.com/infra-provider-gcp/zone
+      value: europe-west2-a
