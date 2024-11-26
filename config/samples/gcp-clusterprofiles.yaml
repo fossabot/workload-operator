@@ -13,6 +13,8 @@ spec:
     name: infra-provider-gcp
 status:
   properties:
+    - name: cityCode
+      value: DFW
     - name: compute.datumapis.com/infra-provider-gcp/project
       value: datum-cloud-poc-1
     - name: compute.datumapis.com/infra-provider-gcp/region
@@ -33,6 +35,8 @@ spec:
     name: infra-provider-gcp
 status:
   properties:
+    - name: cityCode
+      value: DLS
     - name: compute.datumapis.com/infra-provider-gcp/project
       value: datum-cloud-poc-1
     - name: compute.datumapis.com/infra-provider-gcp/region
@@ -53,6 +57,8 @@ spec:
     name: infra-provider-gcp
 status:
   properties:
+    - name: cityCode
+      value: LHR
     - name: compute.datumapis.com/infra-provider-gcp/project
       value: datum-cloud-poc-1
     - name: compute.datumapis.com/infra-provider-gcp/region
