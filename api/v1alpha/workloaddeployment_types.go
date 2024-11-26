@@ -57,6 +57,12 @@ type WorkloadDeploymentStatus struct {
 	// TODO(jreese) ReadyReplicas?
 }
 
+const (
+	// WorkloadDeploymentAvailable indicates that at least one instance has come
+	// online.
+	WorkloadDeploymentAvailable = "Available"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 

@@ -27,5 +27,8 @@
       ]
     }
   },
-  "onCreateCommand": "bash .devcontainer/post-install.sh"
+  "onCreateCommand": "bash .devcontainer/post-install.sh",
+  "mounts": [
+    "source=${localWorkspaceFolder}/../network-services-operator,target=/workspaces/network-services-operator,type=bind"
+  ]
 }

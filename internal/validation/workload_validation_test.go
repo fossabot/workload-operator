@@ -605,6 +605,10 @@ func TestValidateWorkloads(t *testing.T) {
 			},
 		)
 
+		if len(scenario.opts.ValidCityCodes) == 0 {
+			scenario.opts.ValidCityCodes = []string{"DFW"}
+		}
+
 		t.Run(name, func(t *testing.T) {
 			errs := ValidateWorkloadCreate(scenario.workload, scenario.opts)
 

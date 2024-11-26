@@ -71,6 +71,11 @@ type WorkloadStatus struct {
 	Gateway *WorkloadGatewayStatus `json:"gateway,omitempty"`
 }
 
+const (
+	// WorkloadAvailable indicates that at least one instance has come online.
+	WorkloadAvailable = "Available"
+)
+
 type WorkloadGatewayStatus struct {
 	gatewayv1.GatewayStatus `json:",inline"`
 

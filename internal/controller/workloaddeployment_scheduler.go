@@ -53,7 +53,6 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Step 1: Get ClusterProfiles
 	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
-
 	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list cluster profiles: %w", err)
 	}
