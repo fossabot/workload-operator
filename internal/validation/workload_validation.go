@@ -31,6 +31,7 @@ type WorkloadValidationOptions struct {
 	AdmissionRequest admission.Request
 	Context          context.Context
 	Workload         *computev1alpha.Workload
+	ValidCityCodes   []string
 }
 
 func validateWorkloadSpec(spec computev1alpha.WorkloadSpec, opts WorkloadValidationOptions) field.ErrorList {
@@ -39,26 +40,26 @@ func validateWorkloadSpec(spec computev1alpha.WorkloadSpec, opts WorkloadValidat
 	specPath := field.NewPath("spec")
 
 	allErrs = append(allErrs, validateInstanceTemplate(spec.Template, specPath.Child("template"), opts)...)
-	allErrs = append(allErrs, validateWorkloadPlacements(spec.Placements, specPath.Child("placements"))...)
+	allErrs = append(allErrs, validateWorkloadPlacements(spec.Placements, specPath.Child("placements"), opts)...)
 
 	return allErrs
 }
 
-func validateWorkloadPlacements(placements []computev1alpha.WorkloadPlacement, fieldPath *field.Path) field.ErrorList {
+func validateWorkloadPlacements(placements []computev1alpha.WorkloadPlacement, fieldPath *field.Path, opts WorkloadValidationOptions) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if len(placements) == 0 {
 		allErrs = append(allErrs, field.Required(fieldPath, ""))
 	} else {
 		for i, p := range placements {
-			allErrs = append(allErrs, validateWorkloadPlacement(p, fieldPath.Index(i))...)
+			allErrs = append(allErrs, validateWorkloadPlacement(p, fieldPath.Index(i), opts)...)
 		}
 	}
 
 	return allErrs
 }
 
-func validateWorkloadPlacement(placement computev1alpha.WorkloadPlacement, fieldPath *field.Path) field.ErrorList {
+func validateWorkloadPlacement(placement computev1alpha.WorkloadPlacement, fieldPath *field.Path, opts WorkloadValidationOptions) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	nameField := fieldPath.Child("name")
@@ -75,9 +76,8 @@ func validateWorkloadPlacement(placement computev1alpha.WorkloadPlacement, field
 		allErrs = append(allErrs, field.Required(cityCodesPath, ""))
 	} else {
 		for i, cityCode := range placement.CityCodes {
-			// TODO(jreese) eventually check entitlements / access to city codes
-			if !slices.Contains(validCityCodes, cityCode) {
-				allErrs = append(allErrs, field.NotSupported(cityCodesPath.Index(i), cityCode, validCityCodes))
+			if !slices.Contains(opts.ValidCityCodes, cityCode) {
+				allErrs = append(allErrs, field.NotSupported(cityCodesPath.Index(i), cityCode, opts.ValidCityCodes))
 			}
 		}
 	}
@@ -192,5 +192,3 @@ func validateMetricTarget(target computev1alpha.MetricTarget, fieldPath *field.P
 
 	return allErrs
 }
-
-var validCityCodes = []string{"DFW", "DLS", "LHR"}

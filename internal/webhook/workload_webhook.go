@@ -8,6 +8,8 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	clusterinventoryv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -87,11 +89,31 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 		return nil, err
 	}
 
+	// TODO(jreese) validate caller access to individual clusters, consider what
+	// that means for the scheduling phase, since there would not currently be
+	// sufficient context to know who created the workload and what clusters
+	// are valid candidates based on that. Maybe an annotation, or spec field?
+	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
+	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
+		return nil, fmt.Errorf("failed to list cluster profiles: %w", err)
+	}
+
+	validCityCodes := sets.Set[string]{}
+	for _, clusterProfile := range clusterProfiles.Items {
+		for _, p := range clusterProfile.Status.Properties {
+			if p.Name == "cityCode" {
+				validCityCodes.Insert(p.Value)
+				break
+			}
+		}
+	}
+
 	opts := validation.WorkloadValidationOptions{
 		Context:          ctx,
 		Client:           r.Client,
 		AdmissionRequest: req,
 		Workload:         workload,
+		ValidCityCodes:   sets.List(validCityCodes),
 	}
 
 	if errs := validation.ValidateWorkloadCreate(workload, opts); len(errs) > 0 {

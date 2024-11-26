@@ -362,7 +362,6 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 	}
 
 	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
-
 	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
 		return nil, nil, fmt.Errorf("failed to list cluster profiles: %w", err)
 	}
