@@ -49,7 +49,7 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Ensure that a `NetworkBinding` is created for each network interface's
 	// network.
 
-	if deployment.Status.ClusterProfileRef == nil {
+	if deployment.Status.ClusterRef == nil {
 		return ctrl.Result{}, nil
 	}
 
@@ -68,7 +68,7 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 
 		if networkBinding.CreationTimestamp.IsZero() {
-			clusterProfileRef := deployment.Status.ClusterProfileRef
+			clusterRef := deployment.Status.ClusterRef
 			networkBinding = networkingv1alpha.NetworkBinding{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: networkBindingObjectKey.Namespace,
@@ -78,8 +78,8 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 					Network: networkInterface.Network,
 					Topology: map[string]string{
 						// TODO(jreese) move to well known labels package
-						"topology.datum.net/cluster-namespace": clusterProfileRef.Namespace,
-						"topology.datum.net/cluster-name":      clusterProfileRef.Name,
+						"topology.datum.net/cluster-namespace": clusterRef.Namespace,
+						"topology.datum.net/cluster-name":      clusterRef.Name,
 						"topology.datum.net/city-code":         deployment.Spec.CityCode,
 					},
 				},

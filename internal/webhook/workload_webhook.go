@@ -9,12 +9,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	clusterinventoryv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
 	"go.datum.net/workload-operator/internal/validation"
 )
@@ -93,18 +93,16 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 	// that means for the scheduling phase, since there would not currently be
 	// sufficient context to know who created the workload and what clusters
 	// are valid candidates based on that. Maybe an annotation, or spec field?
-	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
-	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
-		return nil, fmt.Errorf("failed to list cluster profiles: %w", err)
+	var clusters networkingv1alpha.DatumClusterList
+	if err := r.Client.List(ctx, &clusters); err != nil {
+		return nil, fmt.Errorf("failed to list clusters: %w", err)
 	}
 
 	validCityCodes := sets.Set[string]{}
-	for _, clusterProfile := range clusterProfiles.Items {
-		for _, p := range clusterProfile.Status.Properties {
-			if p.Name == "cityCode" {
-				validCityCodes.Insert(p.Value)
-				break
-			}
+	for _, cluster := range clusters.Items {
+		cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+		if ok {
+			validCityCodes.Insert(cityCode)
 		}
 	}
 

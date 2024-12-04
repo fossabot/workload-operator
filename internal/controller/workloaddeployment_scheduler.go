@@ -11,13 +11,13 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	clusterinventoryv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
 )
 
@@ -51,22 +51,22 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 	// future, we could see a more advanced system similar to the Kubernetes
 	// scheduler itself.
 
-	// Step 1: Get ClusterProfiles
-	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
-	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to list cluster profiles: %w", err)
+	// Step 1: Get Clusters
+	var clusters networkingv1alpha.DatumClusterList
+	if err := r.Client.List(ctx, &clusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list clusters: %w", err)
 	}
 
-	if len(clusterProfiles.Items) == 0 {
+	if len(clusters.Items) == 0 {
 		// Should only be the case in new environments if workloads are created
 		// prior to cluster registration.
 
 		changed := apimeta.SetStatusCondition(&deployment.Status.Conditions, metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionFalse,
-			Reason:             "NoClusterProfiles",
+			Reason:             "NoClusters",
 			ObservedGeneration: deployment.Generation,
-			Message:            "No cluster profiles are registered with the system.",
+			Message:            "No cluster are registered with the system.",
 		})
 		if changed {
 			// TODO(jreese) investigate kubevirt / other operators for better tracking
@@ -82,13 +82,12 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// TODO(jreese) define standard ClusterProperty names somewhere
 
-	var selectedCluster *clusterinventoryv1alpha1.ClusterProfile
-	for _, clusterProfile := range clusterProfiles.Items {
-		for _, p := range clusterProfile.Status.Properties {
-			if p.Name == "cityCode" && p.Value == deployment.Spec.CityCode {
-				selectedCluster = &clusterProfile
-				break
-			}
+	var selectedCluster *networkingv1alpha.DatumCluster
+	for _, cluster := range clusters.Items {
+		cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+		if ok && cityCode == deployment.Spec.CityCode {
+			selectedCluster = &cluster
+			break
 		}
 	}
 
@@ -106,7 +105,7 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 	} else {
-		deployment.Status.ClusterProfileRef = &computev1alpha.ClusterProfileReference{
+		deployment.Status.ClusterRef = &networkingv1alpha.DatumClusterReference{
 			Name:      selectedCluster.Name,
 			Namespace: selectedCluster.Namespace,
 		}
@@ -138,7 +137,7 @@ func (r *WorkloadDeploymentScheduler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.NewPredicateFuncs(func(object client.Object) bool {
 				// Don't bother processing deployments that have been scheduled
 				o := object.(*computev1alpha.WorkloadDeployment)
-				return o.Status.ClusterProfileRef == nil
+				return o.Status.ClusterRef == nil
 			}),
 		)).
 		Named("workload-deployment-scheduler").

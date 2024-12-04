@@ -18,7 +18,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .status.clusterProfile.name
+    - jsonPath: .status.clusterRef.name
       name: Cluster
       type: string
     - jsonPath: .status.conditions[?(@.type=="Available")].status
@@ -898,14 +898,14 @@ spec:
           status:
             description: WorkloadDeploymentStatus defines the observed state of WorkloadDeployment
             properties:
-              clusterProfileRef:
+              clusterRef:
                 description: The cluster which the deployment has been assigned to
                 properties:
                   name:
-                    description: Name of a cluster profile
+                    description: Name of a datum cluster
                     type: string
                   namespace:
-                    description: Namespace for the cluster profile
+                    description: Namespace for the datum cluster
                     type: string
                 required:
                 - name

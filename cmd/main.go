@@ -86,8 +86,8 @@ func main() {
 
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts:  tlsOpts,
-		CertName: "workload-operator-tls.crt",
-		KeyName:  "workload-operator-tls.key",
+		CertName: "tls.crt",
+		KeyName:  "tls.key",
 	})
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.

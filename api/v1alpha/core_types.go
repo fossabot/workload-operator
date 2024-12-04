@@ -8,15 +8,3 @@ type LocalSecretReference struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 }
-
-type ClusterProfileReference struct {
-	// Name of a cluster profile
-	//
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// Namespace for the cluster profile
-	//
-	// +kubebuilder:validation:Required
-	Namespace string `json:"namespace"`
-}

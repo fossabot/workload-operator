@@ -2,6 +2,8 @@ package v1alpha
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 )
 
 // WorkloadDeploymentSpec defines the desired state of WorkloadDeployment
@@ -38,7 +40,7 @@ type WorkloadDeploymentStatus struct {
 	// The cluster which the deployment has been assigned to
 	//
 	// +kubebuilder:validation:Optional
-	ClusterProfileRef *ClusterProfileReference `json:"clusterProfileRef,omitempty"`
+	ClusterRef *networkingv1alpha.DatumClusterReference `json:"clusterRef,omitempty"`
 
 	// Represents the observations of a deployment's current state.
 	// Known condition types are: "Available", "Progressing"
@@ -68,7 +70,7 @@ const (
 
 // WorkloadDeployment is the Schema for the workloaddeployments API
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.status.clusterProfile.name`
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.status.clusterRef.name`
 // +kubebuilder:printcolumn:name="Available",type=string,JSONPath=`.status.conditions[?(@.type=="Available")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Available")].reason`
 type WorkloadDeployment struct {

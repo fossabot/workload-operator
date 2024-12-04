@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
-	clusterinventoryv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -361,25 +360,24 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 		existingDeployments.Insert(deployment.Name)
 	}
 
-	var clusterProfiles clusterinventoryv1alpha1.ClusterProfileList
-	if err := r.Client.List(ctx, &clusterProfiles); err != nil {
-		return nil, nil, fmt.Errorf("failed to list cluster profiles: %w", err)
+	var clusters networkingv1alpha.DatumClusterList
+	if err := r.Client.List(ctx, &clusters); err != nil {
+		return nil, nil, fmt.Errorf("failed to list clusters: %w", err)
 	}
 
-	if len(clusterProfiles.Items) == 0 {
-		return nil, nil, fmt.Errorf("no cluster profiles are reigstered with the system.")
+	if len(clusters.Items) == 0 {
+		return nil, nil, fmt.Errorf("no clusters are registered with the system.")
 	}
 
 	// Remember this: namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	for _, placement := range workload.Spec.Placements {
 		for _, cityCode := range placement.CityCodes {
 			foundCluster := false
-			for _, clusterProfile := range clusterProfiles.Items {
-				for _, p := range clusterProfile.Status.Properties {
-					if p.Name == "cityCode" && p.Value == cityCode {
-						foundCluster = true
-						break
-					}
+			for _, cluster := range clusters.Items {
+				cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+				if ok && cityCode == cityCode {
+					foundCluster = true
+					break
 				}
 			}
 
