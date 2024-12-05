@@ -7,13 +7,12 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
-	go.datum.net/network-services-operator v0.0.0-20241204145654-24648cf8d2e0
+	go.datum.net/network-services-operator v0.0.0-20241205161241-d19fee49f0b7
 	golang.org/x/crypto v0.28.0
 	google.golang.org/protobuf v1.35.1
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
 	k8s.io/client-go v0.31.1
-	sigs.k8s.io/cluster-inventory-api v0.0.0-20240730014211-ef0154379848
 	sigs.k8s.io/controller-runtime v0.19.1
 	sigs.k8s.io/gateway-api v1.2.0
 )

@@ -89,18 +89,18 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 		return nil, err
 	}
 
-	// TODO(jreese) validate caller access to individual clusters, consider what
+	// TODO(jreese) validate caller access to individual locations, consider what
 	// that means for the scheduling phase, since there would not currently be
-	// sufficient context to know who created the workload and what clusters
+	// sufficient context to know who created the workload and what locations
 	// are valid candidates based on that. Maybe an annotation, or spec field?
-	var clusters networkingv1alpha.DatumClusterList
-	if err := r.Client.List(ctx, &clusters); err != nil {
-		return nil, fmt.Errorf("failed to list clusters: %w", err)
+	var locations networkingv1alpha.LocationList
+	if err := r.Client.List(ctx, &locations); err != nil {
+		return nil, fmt.Errorf("failed to list locations: %w", err)
 	}
 
 	validCityCodes := sets.Set[string]{}
-	for _, cluster := range clusters.Items {
-		cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+	for _, location := range locations.Items {
+		cityCode, ok := location.Spec.Topology["topology.datum.net/city-code"]
 		if ok {
 			validCityCodes.Insert(cityCode)
 		}

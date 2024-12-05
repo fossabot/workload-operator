@@ -360,29 +360,29 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 		existingDeployments.Insert(deployment.Name)
 	}
 
-	var clusters networkingv1alpha.DatumClusterList
-	if err := r.Client.List(ctx, &clusters); err != nil {
-		return nil, nil, fmt.Errorf("failed to list clusters: %w", err)
+	var locations networkingv1alpha.LocationList
+	if err := r.Client.List(ctx, &locations); err != nil {
+		return nil, nil, fmt.Errorf("failed to list locations: %w", err)
 	}
 
-	if len(clusters.Items) == 0 {
-		return nil, nil, fmt.Errorf("no clusters are registered with the system.")
+	if len(locations.Items) == 0 {
+		return nil, nil, fmt.Errorf("no locations are registered with the system.")
 	}
 
 	// Remember this: namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	for _, placement := range workload.Spec.Placements {
 		for _, cityCode := range placement.CityCodes {
-			foundCluster := false
-			for _, cluster := range clusters.Items {
-				cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+			foundLocation := false
+			for _, location := range locations.Items {
+				cityCode, ok := location.Spec.Topology["topology.datum.net/city-code"]
 				if ok && cityCode == cityCode {
-					foundCluster = true
+					foundLocation = true
 					break
 				}
 			}
 
-			if !foundCluster {
-				// TODO(jreese) update status condition on placement if no clusters are
+			if !foundLocation {
+				// TODO(jreese) update status condition on placement if no locations are
 				// found.
 				continue
 			}

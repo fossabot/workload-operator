@@ -37,10 +37,10 @@ type WorkloadDeploymentSpec struct {
 
 // WorkloadDeploymentStatus defines the observed state of WorkloadDeployment
 type WorkloadDeploymentStatus struct {
-	// The cluster which the deployment has been assigned to
+	// The location which the deployment has been scheduled to
 	//
 	// +kubebuilder:validation:Optional
-	ClusterRef *networkingv1alpha.DatumClusterReference `json:"clusterRef,omitempty"`
+	Location *networkingv1alpha.LocationReference `json:"location,omitempty"`
 
 	// Represents the observations of a deployment's current state.
 	// Known condition types are: "Available", "Progressing"
@@ -70,7 +70,8 @@ const (
 
 // WorkloadDeployment is the Schema for the workloaddeployments API
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.status.clusterRef.name`
+// +kubebuilder:printcolumn:name="Location Namespce",type=string,JSONPath=`.status.location.namespace`
+// +kubebuilder:printcolumn:name="Location Name",type=string,JSONPath=`.status.location.name`
 // +kubebuilder:printcolumn:name="Available",type=string,JSONPath=`.status.conditions[?(@.type=="Available")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Available")].reason`
 type WorkloadDeployment struct {

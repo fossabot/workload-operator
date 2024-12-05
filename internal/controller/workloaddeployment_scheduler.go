@@ -47,26 +47,26 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// TODO(jreese) improve!
 	// The first iteration of this scheduler will be very simple and only look for
-	// the first available cluster that is viable for the deployment. In the
+	// the first available location that is viable for the deployment. In the
 	// future, we could see a more advanced system similar to the Kubernetes
 	// scheduler itself.
 
-	// Step 1: Get Clusters
-	var clusters networkingv1alpha.DatumClusterList
-	if err := r.Client.List(ctx, &clusters); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to list clusters: %w", err)
+	// Step 1: Get Locations
+	var locations networkingv1alpha.LocationList
+	if err := r.Client.List(ctx, &locations); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list locations: %w", err)
 	}
 
-	if len(clusters.Items) == 0 {
+	if len(locations.Items) == 0 {
 		// Should only be the case in new environments if workloads are created
-		// prior to cluster registration.
+		// prior to location registration.
 
 		changed := apimeta.SetStatusCondition(&deployment.Status.Conditions, metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionFalse,
-			Reason:             "NoClusters",
+			Reason:             "NoLocations",
 			ObservedGeneration: deployment.Generation,
-			Message:            "No cluster are registered with the system.",
+			Message:            "No locations are registered with the system.",
 		})
 		if changed {
 			// TODO(jreese) investigate kubevirt / other operators for better tracking
@@ -80,24 +80,24 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// TODO(jreese) define standard ClusterProperty names somewhere
+	// TODO(jreese) define standard Topology keys somewhere
 
-	var selectedCluster *networkingv1alpha.DatumCluster
-	for _, cluster := range clusters.Items {
-		cityCode, ok := cluster.Spec.Topology["topology.datum.net/city-code"]
+	var selectedLocation *networkingv1alpha.Location
+	for _, location := range locations.Items {
+		cityCode, ok := location.Spec.Topology["topology.datum.net/city-code"]
 		if ok && cityCode == deployment.Spec.CityCode {
-			selectedCluster = &cluster
+			selectedLocation = &location
 			break
 		}
 	}
 
-	if selectedCluster == nil {
+	if selectedLocation == nil {
 		changed := apimeta.SetStatusCondition(&deployment.Status.Conditions, metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionFalse,
-			Reason:             "NoCandidateClusters",
+			Reason:             "NoCandidateLocations",
 			ObservedGeneration: deployment.Generation,
-			Message:            "No clusters are candidates for this deployment.",
+			Message:            "No locations are candidates for this deployment.",
 		})
 		if changed {
 			if err := r.Client.Status().Update(ctx, &deployment); err != nil {
@@ -105,9 +105,9 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 	} else {
-		deployment.Status.ClusterRef = &networkingv1alpha.DatumClusterReference{
-			Name:      selectedCluster.Name,
-			Namespace: selectedCluster.Namespace,
+		deployment.Status.Location = &networkingv1alpha.LocationReference{
+			Name:      selectedLocation.Name,
+			Namespace: selectedLocation.Namespace,
 		}
 
 		// TODO(jreese) make sure we don't run into update conflicts with the update
@@ -116,9 +116,9 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 		apimeta.SetStatusCondition(&deployment.Status.Conditions, metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClusterAssigned",
+			Reason:             "LocationAssigned",
 			ObservedGeneration: deployment.Generation,
-			Message:            "Deployment has been assigned a cluster.",
+			Message:            "Deployment has been assigned a location.",
 		})
 
 		if err := r.Client.Status().Update(ctx, &deployment); err != nil {
@@ -137,7 +137,7 @@ func (r *WorkloadDeploymentScheduler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.NewPredicateFuncs(func(object client.Object) bool {
 				// Don't bother processing deployments that have been scheduled
 				o := object.(*computev1alpha.WorkloadDeployment)
-				return o.Status.ClusterRef == nil
+				return o.Status.Location == nil
 			}),
 		)).
 		Named("workload-deployment-scheduler").
