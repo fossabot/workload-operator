@@ -28,7 +28,7 @@ type WorkloadSpec struct {
 	// TODO(jreese) make plural?
 	//
 	// +kubebuilder:validation:Optional
-	Gateway *WorkloadGateway `json:"gateway,omitempty"`
+	// Gateway *WorkloadGateway `json:"gateway,omitempty"`
 }
 
 type WorkloadGateway struct {

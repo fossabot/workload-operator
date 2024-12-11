@@ -480,7 +480,10 @@ based workload.
 ##### Container based instance
 
 ```yaml
-name: projects/my-project/workloads/my-container-workload
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  name: my-container-workload
 spec:
   template:
     spec:
@@ -489,10 +492,11 @@ spec:
           instanceType: datumcloud/d1-standard-2
         sandbox:
           containers:
-            - name: netdata
-              image: docker.io/netdata/netdata
+            - name: httpbin
+              image: mccutchen/go-httpbin
       networkInterfaces:
-        - network: default
+        - network:
+            name: default
   placements:
     - name: us
       cityCodes: ['DFW', 'SEA']
@@ -503,7 +507,10 @@ spec:
 ##### VM based instance
 
 ```yaml
-name: projects/my-project/workloads/my-vm-workload
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  name: my-vm-workload
 spec:
   template:
     spec:

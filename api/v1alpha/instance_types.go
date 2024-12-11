@@ -367,6 +367,11 @@ type Instance struct {
 	Status InstanceStatus `json:"status,omitempty"`
 }
 
+// TODO(jreese) consider another type that can be owned by an `Instance`, such
+// as an `InstanceRevision`, that is actually what drives lifecycle events. Need
+// to think through live migration needs, and how to clearly communicate the
+// current state of an instance during a config change rollout.
+
 // +kubebuilder:object:root=true
 
 // InstanceList contains a list of Instance

@@ -96,7 +96,9 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go -health-probe-bind-address 0
+# TODO(jreese) add flags for cert dir, cert name, key name instead of messing
+# with tmpdir
+	TMPDIR=$(LOCALBIN)/tmp go run ./cmd/main.go -health-probe-bind-address 0
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -142,13 +144,11 @@ endif
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/dev | $(KUBECTL) apply -f -
 	$(KUBECTL) wait --for=condition=Ready -n kube-system certificate/workload-operator-serving-cert
-	#@ TODO(jreese) leverage the CertDir setting in the operator and `make run` so
-	#@ the cert doesn't get nuked on a restart of the dev container.
-	mkdir -p /tmp/k8s-webhook-server/serving-certs
+	mkdir -p $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs
 	$(KUBECTL) get secret -n kube-system workload-operator-webhook-server-cert -o json \
-		| jq -r '.data["tls.crt"] | @base64d' > /tmp/k8s-webhook-server/serving-certs/workload-operator-tls.crt
+		| jq -r '.data["tls.crt"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.crt
 	$(KUBECTL) get secret -n kube-system workload-operator-webhook-server-cert -o json \
-		| jq -r '.data["tls.key"] | @base64d' > /tmp/k8s-webhook-server/serving-certs/workload-operator-tls.key
+		| jq -r '.data["tls.key"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.key
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
