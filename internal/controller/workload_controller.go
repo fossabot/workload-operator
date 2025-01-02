@@ -374,8 +374,8 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 		for _, cityCode := range placement.CityCodes {
 			foundLocation := false
 			for _, location := range locations.Items {
-				cityCode, ok := location.Spec.Topology["topology.datum.net/city-code"]
-				if ok && cityCode == cityCode {
+				locationCityCode, ok := location.Spec.Topology["topology.datum.net/city-code"]
+				if ok && cityCode == locationCityCode {
 					foundLocation = true
 					break
 				}
