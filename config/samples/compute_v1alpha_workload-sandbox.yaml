@@ -1,0 +1,63 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: workload-sandbox-sample-secret
+data:
+  password: dmFsdWUK
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workload-sandbox-sample-configmap
+data:
+  some: value
+---
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  labels:
+    tier: app
+  name: workload-sandbox-sample
+spec:
+  template:
+    metadata:
+      labels:
+        tier: app
+    spec:
+      runtime:
+        resources:
+          instanceType: datumcloud/d1-standard-2
+        sandbox:
+          containers:
+            - name: netdata
+              image: docker.io/netdata/netdata:latest
+              volumeAttachments:
+                - name: secret
+                  mountPath: /secret
+                - name: configmap
+                  mountPath: /configmap
+      networkInterfaces:
+      - network:
+          name: default
+        networkPolicy:
+          ingress:
+            - ports:
+              - port: 19999
+              - port: 22
+              from:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+      volumes:
+      - name: secret
+        secret:
+          secretName: workload-sandbox-sample-secret
+      - name: configmap
+        configMap:
+          name: workload-sandbox-sample-configmap
+  placements:
+  - name: us
+    cityCodes:
+    - DFW
+    scaleSettings:
+      minReplicas: 1

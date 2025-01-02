@@ -1,0 +1,40 @@
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  labels:
+    tier: app
+  name: workload-sample
+spec:
+  template:
+    metadata:
+      labels:
+        tier: app
+    spec:
+      runtime:
+        resources:
+          instanceType: datumcloud/d1-standard-2
+        sandbox:
+          containers:
+            - name: netdata
+              image: docker.io/netdata/netdata:latest
+      networkInterfaces:
+      - network:
+          name: default
+        networkPolicy:
+          ingress:
+            - ports:
+              - port: 19999
+              from:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+  placements:
+  - name: us-south
+    cityCodes:
+    - DFW
+    scaleSettings:
+      minReplicas: 1
+  - name: us-south2
+    cityCodes:
+    - DFW
+    scaleSettings:
+      minReplicas: 1

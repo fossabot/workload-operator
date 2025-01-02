@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: workload-vm-sample-secret
+data:
+  password: dmFsdWUK
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workload-vm-sample-configmap
+data:
+  some: value
+---
+apiVersion: compute.datumapis.com/v1alpha
+kind: Workload
+metadata:
+  labels:
+    tier: app
+  name: workload-vm-sample
+spec:
+  template:
+    metadata:
+      annotations:
+        compute.datumapis.com/ssh-keys: |
+          myuser:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAqyjfr0gTk1lxqA/eEac0djYWuw+ZLFphPHmfWwxbO5 joshlreese@gmail.com
+      labels:
+        tier: app
+    spec:
+      runtime:
+        resources:
+          instanceType: datumcloud/d1-standard-2
+        virtualMachine:
+          volumeAttachments:
+          - name: boot
+          - name: secret
+            mountPath: /secret
+          - name: configmap
+            mountPath: /configmap
+      networkInterfaces:
+      - network:
+          name: default
+        networkPolicy:
+          ingress:
+            - ports:
+              - port: 22
+              from:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+      volumes:
+      - name: boot
+        disk:
+          template:
+            spec:
+              type: pd-standard
+              populator:
+                image:
+                  name: datumcloud/ubuntu-2204-lts
+      - name: secret
+        secret:
+          secretName: workload-vm-sample-secret
+      - name: configmap
+        configMap:
+          name: workload-vm-sample-configmap
+  placements:
+  - name: us-south
+    cityCodes:
+    - DFW
+    scaleSettings:
+      minReplicas: 1

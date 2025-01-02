@@ -1,0 +1,45 @@
+---
+apiVersion: networking.datumapis.com/v1alpha
+kind: Location
+metadata:
+ name: gcp-us-south1-a
+ namespace: datum
+spec:
+  locationClassName: datum-managed
+  topology:
+    topology.datum.net/city-code: DFW
+  provider:
+    gcp:
+      projectId: datum-cloud-poc-1
+      region: us-south1
+      zone: us-south1-a
+---
+apiVersion: networking.datumapis.com/v1alpha
+kind: Location
+metadata:
+ name: gcp-us-west1-a
+ namespace: datum
+spec:
+  locationClassName: datum-managed
+  topology:
+    topology.datum.net/city-code: DLS
+  provider:
+    gcp:
+      projectId: datum-cloud-poc-1
+      region: us-west1
+      zone: us-west1-a
+---
+apiVersion: networking.datumapis.com/v1alpha
+kind: Location
+metadata:
+ name: gcp-europe-west2-a
+ namespace: datum
+spec:
+  locationClassName: datum-managed
+  topology:
+    topology.datum.net/city-code: LHR
+  provider:
+    gcp:
+      projectId: datum-cloud-poc-1
+      region: europe-west2
+      zone: europe-west2-a

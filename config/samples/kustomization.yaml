@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- compute_v1alpha_workload.yaml
+- compute_v1alpha_workloaddeployment.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
