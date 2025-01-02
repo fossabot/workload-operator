@@ -7,7 +7,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
-	go.datum.net/network-services-operator v0.0.0-20241205161241-d19fee49f0b7
+	go.datum.net/network-services-operator v0.0.0-20250102193121-b4bcc249023a
 	golang.org/x/crypto v0.28.0
 	google.golang.org/protobuf v1.35.1
 	k8s.io/api v0.31.1
