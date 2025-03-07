@@ -174,6 +174,8 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				logger.Info("updating deployment", "deployment_name", deployment.Name)
 			}
 
+			deployment.Annotations = desiredDeployment.Annotations
+			deployment.Labels = desiredDeployment.Labels
 			deployment.Spec = desiredDeployment.Spec
 			return nil
 		})
