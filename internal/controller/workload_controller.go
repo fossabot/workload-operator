@@ -398,6 +398,9 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: workload.Namespace,
 					Name:      deploymentName,
+					Labels: map[string]string{
+						computev1alpha.WorkloadUIDLabel: string(workload.UID),
+					},
 					Finalizers: []string{
 						workloadControllerFinalizer,
 					},

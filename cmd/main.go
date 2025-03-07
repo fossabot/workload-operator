@@ -160,6 +160,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkloadDeploymentScheduler")
 		os.Exit(1)
 	}
+	if err = (&controller.InstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Instance")
+		os.Exit(1)
+	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = computewebhooks.SetupWorkloadWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Workload")
