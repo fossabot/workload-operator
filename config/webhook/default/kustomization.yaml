@@ -1,5 +1,0 @@
-resources:
-- ../base
-
-configurations:
-- kustomizeconfig.yaml
