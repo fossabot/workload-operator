@@ -181,7 +181,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		})
 
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed mutating workload deployment")
+			return ctrl.Result{}, fmt.Errorf("failed mutating workload deployment: %w", err)
 		}
 
 		placementDeployments[deployment.Spec.PlacementName] = append(
