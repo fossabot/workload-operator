@@ -19,7 +19,7 @@ import (
 
 // InstanceReconciler reconciles an Instance object
 type InstanceReconciler struct {
-	client.Client
+	Client client.Client
 	Scheme *runtime.Scheme
 }
 

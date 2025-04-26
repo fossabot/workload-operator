@@ -20,7 +20,7 @@ import (
 
 // WorkloadDeploymentReconciler reconciles a WorkloadDeployment object
 type WorkloadDeploymentReconciler struct {
-	client.Client
+	Client client.Client
 	Scheme *runtime.Scheme
 }
 
