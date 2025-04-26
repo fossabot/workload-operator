@@ -23,7 +23,7 @@ import (
 
 // WorkloadDeploymentScheduler schedules a WorkloadDeployment
 type WorkloadDeploymentScheduler struct {
-	client.Client
+	Client client.Client
 	Scheme *runtime.Scheme
 }
 

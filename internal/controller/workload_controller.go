@@ -31,7 +31,7 @@ const deploymentWorkloadUID = "spec.workloadRef.uid"
 
 // WorkloadReconciler reconciles a Workload object
 type WorkloadReconciler struct {
-	client.Client
+	Client     client.Client
 	Scheme     *runtime.Scheme
 	finalizers finalizer.Finalizers
 }
@@ -53,7 +53,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	finalizationResult, err := r.finalizers.Finalize(ctx, &workload)
 	if err != nil {
-		if v, ok := err.(kerrors.Aggregate); ok && v.Is(workloadHasDeploymentsErr) {
+		if v, ok := err.(kerrors.Aggregate); ok && v.Is(errWorkloadHasDeployments) {
 			// Don't produce an error in this case and let the watch on deployments
 			// result in another reconcile schedule.
 			logger.Info("workload still has deployments, waiting until removal")
@@ -293,7 +293,7 @@ func (r *WorkloadReconciler) reconcileWorkloadStatus(
 	return nil
 }
 
-var workloadHasDeploymentsErr = errors.New("workload has deployments")
+var errWorkloadHasDeployments = errors.New("workload has deployments")
 
 func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (finalizer.Result, error) {
 
@@ -336,7 +336,7 @@ func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (f
 	// Really don't like using errors for communication here. I think we'd need
 	// to move away from the finalizer helper to ensure we can wait on child
 	// resources to be gone before allowing the finalizer to be removed.
-	return finalizer.Result{}, workloadHasDeploymentsErr
+	return finalizer.Result{}, errWorkloadHasDeployments
 }
 
 // getDeploymentsForWorkload returns both deployments that are desired to exist
@@ -368,7 +368,7 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 	}
 
 	if len(locations.Items) == 0 {
-		return nil, nil, fmt.Errorf("no locations are registered with the system.")
+		return nil, nil, fmt.Errorf("no locations are registered with the system")
 	}
 
 	// Remember this: namespace, name, err := cache.SplitMetaNamespaceKey(key)

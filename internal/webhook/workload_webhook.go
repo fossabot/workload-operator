@@ -38,7 +38,7 @@ func SetupWorkloadWebhookWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:webhook:path=/mutate-compute-datumapis-com-v1alpha-workload,mutating=true,failurePolicy=fail,sideEffects=None,groups=compute.datumapis.com,resources=workloads,verbs=create;update,versions=v1alpha,name=mworkload.kb.io,admissionReviewVersions=v1
 
 type workloadWebhook struct {
-	client.Client
+	Client client.Client
 	logger logr.Logger
 }
 
