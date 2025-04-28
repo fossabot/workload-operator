@@ -5,7 +5,7 @@ spec:
         group: compute.datumapis.com
         kind: Workload
         version: v1alpha
-      metricNamePrefix: "workload"
+      metricNamePrefix: "datum_cloud_compute_workload"
       labelsFromPath:
         namespace: [metadata, namespace]
         name: [metadata, name]

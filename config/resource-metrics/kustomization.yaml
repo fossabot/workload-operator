@@ -8,6 +8,7 @@ configMapGenerator:
         telemetry.datumapis.com/resource-metrics-config: "true"
 
     files:
+      - general.yaml
       - instances.yaml
       - workload-deployments.yaml
       - workloads.yaml

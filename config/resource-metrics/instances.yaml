@@ -5,7 +5,7 @@ spec:
         group: compute.datumapis.com
         kind: Instance
         version: v1alpha
-      metricNamePrefix: "instance"
+      metricNamePrefix: "datum_cloud_compute_instance"
       labelsFromPath:
         namespace: [metadata, namespace]
         name: [metadata, name]
