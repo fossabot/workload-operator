@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: workload-services-metrics
+    options:
+      labels:
+        telemetry.datumapis.com/resource-metrics-config: "true"
+
+    files:
+      - general.yaml
+      - instances.yaml
+      - workload-deployments.yaml
+      - workloads.yaml
