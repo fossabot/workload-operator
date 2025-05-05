@@ -10,12 +10,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
@@ -23,15 +25,20 @@ import (
 
 // WorkloadDeploymentScheduler schedules a WorkloadDeployment
 type WorkloadDeploymentScheduler struct {
-	Client client.Client
-	Scheme *runtime.Scheme
+	mgr mcmanager.Manager
 }
 
-func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	cl, err := r.mgr.GetCluster(ctx, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	ctx = mccontext.WithCluster(ctx, req.ClusterName)
 	var deployment computev1alpha.WorkloadDeployment
-	if err := r.Client.Get(ctx, req.NamespacedName, &deployment); err != nil {
+	if err := cl.GetClient().Get(ctx, req.NamespacedName, &deployment); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -53,7 +60,7 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Step 1: Get Locations
 	var locations networkingv1alpha.LocationList
-	if err := r.Client.List(ctx, &locations); err != nil {
+	if err := cl.GetClient().List(ctx, &locations); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list locations: %w", err)
 	}
 
@@ -72,7 +79,7 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 			// TODO(jreese) investigate kubevirt / other operators for better tracking
 			// of updates to the status. I seem to remember a "builder" of sorts that
 			// looked rather nice.
-			if err := r.Client.Status().Update(ctx, &deployment); err != nil {
+			if err := cl.GetClient().Status().Update(ctx, &deployment); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update deployment status: %w", err)
 			}
 		}
@@ -100,7 +107,7 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 			Message:            "No locations are candidates for this deployment.",
 		})
 		if changed {
-			if err := r.Client.Status().Update(ctx, &deployment); err != nil {
+			if err := cl.GetClient().Status().Update(ctx, &deployment); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update deployment status: %w", err)
 			}
 		}
@@ -121,7 +128,7 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 			Message:            "Deployment has been assigned a location.",
 		})
 
-		if err := r.Client.Status().Update(ctx, &deployment); err != nil {
+		if err := cl.GetClient().Status().Update(ctx, &deployment); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update deployment status: %w", err)
 		}
 
@@ -131,11 +138,12 @@ func (r *WorkloadDeploymentScheduler) Reconcile(ctx context.Context, req ctrl.Re
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *WorkloadDeploymentScheduler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&computev1alpha.WorkloadDeployment{}, builder.WithPredicates(
+func (r *WorkloadDeploymentScheduler) SetupWithManager(mgr mcmanager.Manager) error {
+	r.mgr = mgr
+	return mcbuilder.ControllerManagedBy(mgr).
+		For(&computev1alpha.WorkloadDeployment{}, mcbuilder.WithPredicates(
 			predicate.NewPredicateFuncs(func(object client.Object) bool {
-				// Don't bother processing deployments that have been scheduled
+				// Don't process deployments that have been scheduled
 				o := object.(*computev1alpha.WorkloadDeployment)
 				return o.Status.Location == nil
 			}),

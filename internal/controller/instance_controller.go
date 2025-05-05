@@ -9,29 +9,37 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
 )
 
 // InstanceReconciler reconciles an Instance object
 type InstanceReconciler struct {
-	Client client.Client
-	Scheme *runtime.Scheme
+	mgr mcmanager.Manager
 }
 
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=instances/finalizers,verbs=update
 
-func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *InstanceReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	cl, err := r.mgr.GetCluster(ctx, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	ctx = mccontext.WithCluster(ctx, req.ClusterName)
 	var instance computev1alpha.Instance
-	if err := r.Client.Get(ctx, req.NamespacedName, &instance); err != nil {
+	if err := cl.GetClient().Get(ctx, req.NamespacedName, &instance); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -62,7 +70,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Namespace: instance.Namespace,
 		Name:      workloadDeploymentRef.Name,
 	}
-	if err := r.Client.Get(ctx, workloadDeploymentObjectKey, &workloadDeployment); err != nil {
+	if err := cl.GetClient().Get(ctx, workloadDeploymentObjectKey, &workloadDeployment); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -79,7 +87,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	updated.Labels[computev1alpha.WorkloadDeploymentUIDLabel] = string(workloadDeploymentRef.UID)
 
 	if !equality.Semantic.DeepEqual(updated, instance) {
-		if err := r.Client.Update(ctx, updated); err != nil {
+		if err := cl.GetClient().Update(ctx, updated); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed updating instance: %w", err)
 		}
 	}
@@ -88,8 +96,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&computev1alpha.Instance{}).
+func (r *InstanceReconciler) SetupWithManager(mgr mcmanager.Manager) error {
+	r.mgr = mgr
+	return mcbuilder.ControllerManagedBy(mgr).
+		For(&computev1alpha.Instance{}, mcbuilder.WithEngageWithLocalCluster(false)).
 		Complete(r)
 }

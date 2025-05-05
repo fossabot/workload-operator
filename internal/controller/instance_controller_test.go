@@ -13,9 +13,25 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
 )
+
+type testManager struct {
+	ctrl.Manager
+	client client.Client
+	scheme *runtime.Scheme
+}
+
+func (m *testManager) GetClient() client.Client {
+	return m.client
+}
+
+func (m *testManager) GetScheme() *runtime.Scheme {
+	return m.scheme
+}
 
 func TestInstanceReconciler(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -138,8 +154,22 @@ func TestInstanceReconciler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cl := fakeclient.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objs...).Build()
-			reconciler := &InstanceReconciler{Client: cl, Scheme: scheme}
-			_, err := reconciler.Reconcile(context.Background(), tc.req)
+
+			testMgr := &testManager{
+				client: cl,
+				scheme: scheme,
+			}
+
+			mgr, err := mcmanager.WithMultiCluster(testMgr, nil)
+			if err != nil {
+				t.Fatalf("failed to create manager: %v", err)
+			}
+
+			reconciler := &InstanceReconciler{mgr}
+			_, err = reconciler.Reconcile(context.Background(), mcreconcile.Request{
+				Request:     tc.req,
+				ClusterName: "",
+			})
 
 			// Check error
 			if tc.expectedErr == "" {

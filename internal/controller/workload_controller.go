@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,6 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
@@ -31,8 +33,7 @@ const deploymentWorkloadUID = "spec.workloadRef.uid"
 
 // WorkloadReconciler reconciles a Workload object
 type WorkloadReconciler struct {
-	Client     client.Client
-	Scheme     *runtime.Scheme
+	mgr        mcmanager.Manager
 	finalizers finalizer.Finalizers
 }
 
@@ -40,11 +41,18 @@ type WorkloadReconciler struct {
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=workloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=workloads/finalizers,verbs=update
 
-func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *WorkloadReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	cl, err := r.mgr.GetCluster(ctx, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	ctx = mccontext.WithCluster(ctx, req.ClusterName)
+
 	var workload computev1alpha.Workload
-	if err := r.Client.Get(ctx, req.NamespacedName, &workload); err != nil {
+	if err := cl.GetClient().Get(ctx, req.NamespacedName, &workload); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -63,7 +71,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 	if finalizationResult.Updated {
-		if err = r.Client.Update(ctx, &workload); err != nil {
+		if err = cl.GetClient().Update(ctx, &workload); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update based on finalization result: %w", err)
 		}
 		return ctrl.Result{}, nil
@@ -94,7 +102,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			Namespace: workload.Namespace,
 			Name:      networkInterface.Network.Name,
 		}
-		if err := r.Client.Get(ctx, networkObjectKey, &network); err != nil {
+		if err := cl.GetClient().Get(ctx, networkObjectKey, &network); err != nil {
 			if apierrors.IsNotFound(err) {
 				notFoundNetworks.Insert(networkInterface.Network.Name)
 			} else {
@@ -114,7 +122,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		})
 
 		if changed {
-			if err := r.Client.Status().Update(ctx, &workload); err != nil {
+			if err := cl.GetClient().Status().Update(ctx, &workload); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed updating workload status: %w", err)
 			}
 		}
@@ -131,7 +139,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// we could run multiple versions of an operator at the same time and
 	// incrementally promote resources to newer versions.
 
-	desired, orphaned, err := r.getDeploymentsForWorkload(ctx, &workload)
+	desired, orphaned, err := r.getDeploymentsForWorkload(ctx, cl.GetClient(), &workload)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed getting deployments for workload: %w", err)
 	}
@@ -141,7 +149,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if len(orphaned) > 0 {
 		for _, deployment := range orphaned {
 			if deployment.DeletionTimestamp.IsZero() {
-				if err := r.Client.Delete(ctx, &deployment); client.IgnoreNotFound(err) != nil {
+				if err := cl.GetClient().Delete(ctx, &deployment); client.IgnoreNotFound(err) != nil {
 					return ctrl.Result{}, fmt.Errorf("failed while deleting orphaned deployment: %w", err)
 				}
 			}
@@ -163,11 +171,11 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			},
 		}
 
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		_, err := controllerutil.CreateOrUpdate(ctx, cl.GetClient(), deployment, func() error {
 			if deployment.CreationTimestamp.IsZero() {
 				logger.Info("creating deployment", "deployment_name", deployment.Name)
 				deployment.Finalizers = desiredDeployment.Finalizers
-				if err := controllerutil.SetControllerReference(&workload, deployment, r.Scheme); err != nil {
+				if err := controllerutil.SetControllerReference(&workload, deployment, cl.GetScheme()); err != nil {
 					return fmt.Errorf("failed to set controller on workload deployment: %w", err)
 				}
 			} else {
@@ -190,15 +198,16 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		)
 	}
 
-	return ctrl.Result{}, r.reconcileWorkloadStatus(ctx, logger, &workload, placementDeployments)
+	return ctrl.Result{}, r.reconcileWorkloadStatus(ctx, cl.GetClient(), &workload, placementDeployments)
 }
 
 func (r *WorkloadReconciler) reconcileWorkloadStatus(
 	ctx context.Context,
-	logger logr.Logger,
+	upstreamClient client.Client,
 	workload *computev1alpha.Workload,
 	placementDeployments map[string][]computev1alpha.WorkloadDeployment,
 ) error {
+	logger := log.FromContext(ctx)
 	logger.Info("reconciling placement status")
 	newWorkloadStatus := workload.Status.DeepCopy()
 	totalReplicas := int32(0)
@@ -286,7 +295,7 @@ func (r *WorkloadReconciler) reconcileWorkloadStatus(
 	}
 
 	workload.Status = *newWorkloadStatus
-	if err := r.Client.Status().Update(ctx, workload); err != nil {
+	if err := upstreamClient.Status().Update(ctx, workload); err != nil {
 		return fmt.Errorf("failed updating workload status")
 	}
 
@@ -297,11 +306,21 @@ var errWorkloadHasDeployments = errors.New("workload has deployments")
 
 func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (finalizer.Result, error) {
 
+	clusterName, ok := mccontext.ClusterFrom(ctx)
+	if !ok {
+		return finalizer.Result{}, fmt.Errorf("cluster name not found in context")
+	}
+
+	cl, err := r.mgr.GetCluster(ctx, clusterName)
+	if err != nil {
+		return finalizer.Result{}, err
+	}
+
 	listOpts := client.MatchingFields{
 		deploymentWorkloadUID: string(obj.GetUID()),
 	}
 	var deployments computev1alpha.WorkloadDeploymentList
-	if err := r.Client.List(ctx, &deployments, listOpts); err != nil {
+	if err := cl.GetClient().List(ctx, &deployments, listOpts); err != nil {
 		return finalizer.Result{}, err
 	}
 
@@ -315,7 +334,7 @@ func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (f
 		if deployment.DeletionTimestamp.IsZero() {
 			// Deletion will result in another reconcile of the workload, where we
 			// will remove the finalizers.
-			if err := r.Client.Delete(ctx, &deployment); err != nil {
+			if err := cl.GetClient().Delete(ctx, &deployment); err != nil {
 				if apierrors.IsNotFound(err) {
 					// List cache was not up to date
 					continue
@@ -325,7 +344,7 @@ func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (f
 		} else {
 			// Remove the finalizer if it's still present
 			if controllerutil.RemoveFinalizer(&deployment, workloadControllerFinalizer) {
-				if err := r.Client.Update(ctx, &deployment); err != nil {
+				if err := cl.GetClient().Update(ctx, &deployment); err != nil {
 					return finalizer.Result{}, fmt.Errorf("failed removing finalizer from workload deployment: %w", err)
 				}
 			}
@@ -344,6 +363,7 @@ func (r *WorkloadReconciler) Finalize(ctx context.Context, obj client.Object) (f
 // removed.
 func (r *WorkloadReconciler) getDeploymentsForWorkload(
 	ctx context.Context,
+	upstreamClient client.Client,
 	workload *computev1alpha.Workload,
 ) (desired []computev1alpha.WorkloadDeployment, orphaned []computev1alpha.WorkloadDeployment, err error) {
 
@@ -351,7 +371,7 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 		deploymentWorkloadUID: string(workload.UID),
 	}
 	var deployments computev1alpha.WorkloadDeploymentList
-	if err := r.Client.List(ctx, &deployments, listOpts); err != nil {
+	if err := upstreamClient.List(ctx, &deployments, listOpts); err != nil {
 		return nil, nil, err
 	}
 
@@ -363,7 +383,7 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 	}
 
 	var locations networkingv1alpha.LocationList
-	if err := r.Client.List(ctx, &locations); err != nil {
+	if err := upstreamClient.List(ctx, &locations); err != nil {
 		return nil, nil, fmt.Errorf("failed to list locations: %w", err)
 	}
 
@@ -434,7 +454,8 @@ func (r *WorkloadReconciler) getDeploymentsForWorkload(
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *WorkloadReconciler) SetupWithManager(mgr mcmanager.Manager) error {
+	r.mgr = mgr
 
 	r.finalizers = finalizer.NewFinalizers()
 	if err := r.finalizers.Register(workloadControllerFinalizer, r); err != nil {
@@ -455,8 +476,8 @@ func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// TODO(jreese) add watch against networks that triggers a reconcile for
 	// workloads that are attached and are in an error state for networks not
 	// existing.
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&computev1alpha.Workload{}).
-		Owns(&computev1alpha.WorkloadDeployment{}).
+	return mcbuilder.ControllerManagedBy(mgr).
+		For(&computev1alpha.Workload{}, mcbuilder.WithEngageWithLocalCluster(false)).
+		Owns(&computev1alpha.WorkloadDeployment{}, mcbuilder.WithEngageWithLocalCluster(false)).
 		Complete(r)
 }

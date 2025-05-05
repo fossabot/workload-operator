@@ -7,6 +7,7 @@ rules:
 - apiGroups:
   - compute.datumapis.com
   resources:
+  - instances
   - workloaddeployments
   - workloads
   verbs:
@@ -20,6 +21,7 @@ rules:
 - apiGroups:
   - compute.datumapis.com
   resources:
+  - instances/finalizers
   - workloaddeployments/finalizers
   - workloads/finalizers
   verbs:
@@ -27,6 +29,7 @@ rules:
 - apiGroups:
   - compute.datumapis.com
   resources:
+  - instances/status
   - workloaddeployments/status
   - workloads/status
   verbs:

@@ -3,39 +3,54 @@
 package main
 
 import (
-	"crypto/tls"
+	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"golang.org/x/sync/errgroup"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
+	mcsingle "sigs.k8s.io/multicluster-runtime/providers/single"
 
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
+	"go.datum.net/workload-operator/internal/config"
 	"go.datum.net/workload-operator/internal/controller"
-	computewebhooks "go.datum.net/workload-operator/internal/webhook"
+	"go.datum.net/workload-operator/internal/providers"
+	mcdatum "go.datum.net/workload-operator/internal/providers/datum"
+	computewebhook "go.datum.net/workload-operator/internal/webhook"
+	computev1alphawebhooks "go.datum.net/workload-operator/internal/webhook/v1alpha"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	codecs   = serializer.NewCodecFactory(scheme, serializer.EnableStrict)
 )
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	utilruntime.Must(config.AddToScheme(scheme))
+	utilruntime.Must(config.RegisterDefaults(scheme))
 	utilruntime.Must(computev1alpha.AddToScheme(scheme))
 	utilruntime.Must(networkingv1alpha.AddToScheme(scheme))
 
@@ -43,78 +58,80 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
+
 	var enableLeaderElection bool
 	var leaderElectionNamespace string
 	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	var serverConfigFile string
+
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&leaderElectionNamespace, "leader-elect-namespace", "", "The namespace to use for leader election.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+
 	opts := zap.Options{
 		Development: true,
 	}
+
+	flag.StringVar(&serverConfigFile, "server-config", "", "path to the server config file")
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// if the enable-http2 flag is false (the default), http/2 should be disabled
-	// due to its vulnerabilities. More specifically, disabling http/2 will
-	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
-	// Rapid Reset CVEs. For more information see:
-	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
-	// - https://github.com/advisories/GHSA-4374-p667-p6c8
-	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
+	var serverConfig config.WorkloadOperator
+	var configData []byte
+	if len(serverConfigFile) > 0 {
+		var err error
+		configData, err = os.ReadFile(serverConfigFile)
+		if err != nil {
+			setupLog.Error(fmt.Errorf("unable to read server config from %q", serverConfigFile), "")
+			os.Exit(1)
+		}
 	}
 
-	if !enableHTTP2 {
-		tlsOpts = append(tlsOpts, disableHTTP2)
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), configData, &serverConfig); err != nil {
+		setupLog.Error(err, "unable to decode server config")
+		os.Exit(1)
 	}
 
-	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts:  tlsOpts,
-		CertName: "tls.crt",
-		KeyName:  "tls.key",
+	setupLog.Info("server config", "config", serverConfig)
+
+	cfg := ctrl.GetConfigOrDie()
+
+	deploymentCluster, err := cluster.New(cfg, func(o *cluster.Options) {
+		o.Scheme = scheme
 	})
-
-	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
-	// More info:
-	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/metrics/server
-	// - https://book.kubebuilder.io/reference/metrics.html
-	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
-		// TODO(user): TLSOpts is used to allow configuring the TLS config used for the server. If certificates are
-		// not provided, self-signed certificates will be generated by default. This option is not recommended for
-		// production environments as self-signed certificates do not offer the same level of trust and security
-		// as certificates issued by a trusted Certificate Authority (CA). The primary risk is potentially allowing
-		// unauthorized access to sensitive metrics data. Consider replacing with CertDir, CertName, and KeyName
-		// to provide certificates, ensuring the server communicates using trusted and secure certificates.
-		TLSOpts: tlsOpts,
+	if err != nil {
+		setupLog.Error(err, "failed creating local cluster")
+		os.Exit(1)
 	}
 
-	if secureMetrics {
-		// FilterProvider is used to protect the metrics endpoint with authn/authz.
-		// These configurations ensure that only authorized users and service accounts
-		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
-		// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/metrics/filters#WithAuthenticationAndAuthorization
-		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
+	runnables, provider, err := initializeClusterDiscovery(serverConfig, deploymentCluster, scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to initialize cluster discovery")
+		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	setupLog.Info("cluster discovery mode", "mode", serverConfig.Discovery.Mode)
+
+	ctx := ctrl.SetupSignalHandler()
+
+	deploymentClusterClient := deploymentCluster.GetClient()
+
+	metricsServerOptions := serverConfig.MetricsServer.Options(ctx, deploymentClusterClient)
+
+	webhookServer := webhook.NewServer(
+		serverConfig.WebhookServer.Options(ctx, deploymentClusterClient),
+	)
+
+	if serverConfig.Discovery.Mode != providers.ProviderSingle {
+		webhookServer = computewebhook.NewClusterAwareWebhookServer(webhookServer)
+	}
+
+	mgr, err := mcmanager.New(cfg, provider, ctrl.Options{
 		Scheme:                  scheme,
 		Metrics:                 metricsServerOptions,
 		WebhookServer:           webhookServer,
@@ -139,40 +156,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.WorkloadReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.WorkloadReconciler{}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
 		os.Exit(1)
 	}
-	if err = (&controller.WorkloadDeploymentReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.WorkloadDeploymentReconciler{}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkloadDeployment")
 		os.Exit(1)
 	}
-	if err = (&controller.WorkloadDeploymentScheduler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.WorkloadDeploymentScheduler{}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkloadDeploymentScheduler")
 		os.Exit(1)
 	}
-	if err = (&controller.InstanceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.InstanceReconciler{}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Instance")
 		os.Exit(1)
 	}
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = computewebhooks.SetupWorkloadWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "Workload")
-			os.Exit(1)
-		}
+
+	if err = computev1alphawebhooks.SetupWorkloadWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Workload")
+		os.Exit(1)
 	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -184,9 +189,121 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+	g, ctx := errgroup.WithContext(ctx)
+	for _, runnable := range runnables {
+		g.Go(func() error {
+			return ignoreCanceled(runnable.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting cluster discovery provider")
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+
+	setupLog.Info("starting multicluster manager")
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+
+	if err := g.Wait(); err != nil {
+		setupLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
+}
+
+type runnableProvider interface {
+	multicluster.Provider
+	Run(context.Context, mcmanager.Manager) error
+}
+
+// Needed until we contribute the patch in the following PR again (need to sign CLA):
+//
+//	See: https://github.com/kubernetes-sigs/multicluster-runtime/pull/18
+type wrappedSingleClusterProvider struct {
+	multicluster.Provider
+	cluster cluster.Cluster
+}
+
+func (p *wrappedSingleClusterProvider) Run(ctx context.Context, mgr mcmanager.Manager) error {
+	if err := mgr.Engage(ctx, "single", p.cluster); err != nil {
+		return err
+	}
+	return p.Provider.(runnableProvider).Run(ctx, mgr)
+}
+
+func initializeClusterDiscovery(
+	serverConfig config.WorkloadOperator,
+	deploymentCluster cluster.Cluster,
+	scheme *runtime.Scheme,
+) (runnables []manager.Runnable, provider runnableProvider, err error) {
+	runnables = append(runnables, deploymentCluster)
+	switch serverConfig.Discovery.Mode {
+	case providers.ProviderSingle:
+		provider = &wrappedSingleClusterProvider{
+			Provider: mcsingle.New("single", deploymentCluster),
+			cluster:  deploymentCluster,
+		}
+
+	case providers.ProviderDatum:
+		discoveryRestConfig, err := serverConfig.Discovery.DiscoveryRestConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get discovery rest config: %w", err)
+		}
+
+		projectRestConfig, err := serverConfig.Discovery.ProjectRestConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get project rest config: %w", err)
+		}
+
+		discoveryManager, err := manager.New(discoveryRestConfig, manager.Options{
+			Client: client.Options{
+				Cache: &client.CacheOptions{
+					Unstructured: true,
+				},
+			},
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to set up overall controller manager: %w", err)
+		}
+
+		provider, err = mcdatum.New(discoveryManager, mcdatum.Options{
+			ClusterOptions: []cluster.Option{
+				func(o *cluster.Options) {
+					o.Scheme = scheme
+				},
+			},
+			InternalServiceDiscovery: serverConfig.Discovery.InternalServiceDiscovery,
+			ProjectRestConfig:        projectRestConfig,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create datum project provider: %w", err)
+		}
+
+		runnables = append(runnables, discoveryManager)
+
+	// case providers.ProviderKind:
+	// 	provider = mckind.New(mckind.Options{
+	// 		ClusterOptions: []cluster.Option{
+	// 			func(o *cluster.Options) {
+	// 				o.Scheme = scheme
+	// 			},
+	// 		},
+	// 	})
+
+	default:
+		return nil, nil, fmt.Errorf(
+			"unsupported cluster discovery mode %s",
+			serverConfig.Discovery.Mode,
+		)
+	}
+
+	return runnables, provider, nil
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
