@@ -55,6 +55,12 @@ type WebhookServerConfig struct {
 	ClientCAName string `json:"clientCAName"`
 }
 
+func SetDefaults_WebhookServerConfig(obj *WebhookServerConfig) {
+	if obj.TLS.CertDir == "" {
+		obj.TLS.CertDir = filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
+	}
+}
+
 func (c *WebhookServerConfig) Options(ctx context.Context, secretsClient client.Client) webhook.Options {
 	opts := webhook.Options{
 		Host:     c.Host,
@@ -97,6 +103,10 @@ func SetDefaults_MetricsServerConfig(obj *MetricsServerConfig) {
 
 	if obj.BindAddress == "" {
 		obj.BindAddress = "0"
+	}
+
+	if len(obj.TLS.CertDir) == 0 {
+		obj.TLS.CertDir = filepath.Join(os.TempDir(), "k8s-metrics-server", "serving-certs")
 	}
 }
 
@@ -186,10 +196,6 @@ func (c *TLSConfig) Options(ctx context.Context, secretsClient client.Client) []
 }
 
 func SetDefaults_TLSConfig(obj *TLSConfig) {
-	if len(obj.CertDir) == 0 {
-		obj.CertDir = filepath.Join(os.TempDir(), "k8s-metrics-server", "serving-certs")
-	}
-
 	if len(obj.CertName) == 0 {
 		obj.CertName = "tls.crt"
 	}
