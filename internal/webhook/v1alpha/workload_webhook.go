@@ -10,25 +10,25 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
 	"go.datum.net/workload-operator/internal/validation"
+	computewebhook "go.datum.net/workload-operator/internal/webhook"
 )
 
 // SetupWorkloadWebhookWithManager will setup the manager to manage workload
 // webhooks
-func SetupWorkloadWebhookWithManager(mgr ctrl.Manager) error {
-	client := mgr.GetClient()
+func SetupWorkloadWebhookWithManager(mgr mcmanager.Manager) error {
 
 	webhook := &workloadWebhook{
-		Client: client,
+		mgr:    mgr,
 		logger: mgr.GetLogger(),
 	}
 
-	return ctrl.NewWebhookManagedBy(mgr).
+	return ctrl.NewWebhookManagedBy(mgr.GetLocalManager()).
 		For(&computev1alpha.Workload{}).
 		WithDefaulter(webhook).
 		WithValidator(webhook).
@@ -38,7 +38,7 @@ func SetupWorkloadWebhookWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:webhook:path=/mutate-compute-datumapis-com-v1alpha-workload,mutating=true,failurePolicy=fail,sideEffects=None,groups=compute.datumapis.com,resources=workloads,verbs=create;update,versions=v1alpha,name=mworkload.kb.io,admissionReviewVersions=v1
 
 type workloadWebhook struct {
-	Client client.Client
+	mgr    mcmanager.Manager
 	logger logr.Logger
 }
 
@@ -83,6 +83,14 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 		return nil, fmt.Errorf("unexpected type %T", obj)
 	}
 
+	clusterName := computewebhook.ClusterNameFromContext(ctx)
+
+	cluster, err := r.mgr.GetCluster(ctx, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	clusterClient := cluster.GetClient()
+
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -93,7 +101,7 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 	// sufficient context to know who created the workload and what locations
 	// are valid candidates based on that. Maybe an annotation, or spec field?
 	var locations networkingv1alpha.LocationList
-	if err := r.Client.List(ctx, &locations); err != nil {
+	if err := clusterClient.List(ctx, &locations); err != nil {
 		return nil, fmt.Errorf("failed to list locations: %w", err)
 	}
 
@@ -107,7 +115,7 @@ func (r *workloadWebhook) ValidateCreate(ctx context.Context, obj runtime.Object
 
 	opts := validation.WorkloadValidationOptions{
 		Context:          ctx,
-		Client:           r.Client,
+		Client:           clusterClient,
 		AdmissionRequest: req,
 		Workload:         workload,
 		ValidCityCodes:   sets.List(validCityCodes),

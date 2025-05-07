@@ -3,7 +3,6 @@ apiVersion: networking.datumapis.com/v1alpha
 kind: Location
 metadata:
  name: gcp-us-south1-a
- namespace: datum
 spec:
   locationClassName: datum-managed
   topology:
@@ -18,7 +17,6 @@ apiVersion: networking.datumapis.com/v1alpha
 kind: Location
 metadata:
  name: gcp-us-west1-a
- namespace: datum
 spec:
   locationClassName: datum-managed
   topology:
@@ -33,7 +31,6 @@ apiVersion: networking.datumapis.com/v1alpha
 kind: Location
 metadata:
  name: gcp-europe-west2-a
- namespace: datum
 spec:
   locationClassName: datum-managed
   topology:

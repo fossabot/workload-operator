@@ -8,11 +8,14 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	networkingv1alpha "go.datum.net/network-services-operator/api/v1alpha"
 	computev1alpha "go.datum.net/workload-operator/api/v1alpha"
@@ -20,19 +23,25 @@ import (
 
 // WorkloadDeploymentReconciler reconciles a WorkloadDeployment object
 type WorkloadDeploymentReconciler struct {
-	Client client.Client
-	Scheme *runtime.Scheme
+	mgr mcmanager.Manager
 }
 
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=workloaddeployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=workloaddeployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=compute.datumapis.com,resources=workloaddeployments/finalizers,verbs=update
 
-func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	cl, err := r.mgr.GetCluster(ctx, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	ctx = mccontext.WithCluster(ctx, req.ClusterName)
+
 	var deployment computev1alpha.WorkloadDeployment
-	if err := r.Client.Get(ctx, req.NamespacedName, &deployment); err != nil {
+	if err := cl.GetClient().Get(ctx, req.NamespacedName, &deployment); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -63,7 +72,7 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Name:      fmt.Sprintf("%s-net-%d", deployment.Name, i),
 		}
 
-		if err := r.Client.Get(ctx, networkBindingObjectKey, &networkBinding); client.IgnoreNotFound(err) != nil {
+		if err := cl.GetClient().Get(ctx, networkBindingObjectKey, &networkBinding); client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, fmt.Errorf("failed checking for existing network binding: %w", err)
 		}
 
@@ -79,11 +88,11 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 				},
 			}
 
-			if err := controllerutil.SetControllerReference(&deployment, &networkBinding, r.Scheme); err != nil {
+			if err := controllerutil.SetControllerReference(&deployment, &networkBinding, cl.GetScheme()); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to set controller on network binding: %w", err)
 			}
 
-			if err := r.Client.Create(ctx, &networkBinding); err != nil {
+			if err := cl.GetClient().Create(ctx, &networkBinding); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed creating network binding: %w", err)
 			}
 		}
@@ -94,9 +103,10 @@ func (r *WorkloadDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *WorkloadDeploymentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *WorkloadDeploymentReconciler) SetupWithManager(mgr mcmanager.Manager) error {
+	r.mgr = mgr
 	// TODO(jreese) finalizers
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&computev1alpha.WorkloadDeployment{}).
+	return mcbuilder.ControllerManagedBy(mgr).
+		For(&computev1alpha.WorkloadDeployment{}, mcbuilder.WithEngageWithLocalCluster(false)).
 		Complete(r)
 }
