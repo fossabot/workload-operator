@@ -7,3 +7,9 @@ images:
 - name: controller
   newName: example.com/datum-workload-operator
   newTag: v0.0.1
+configMapGenerator:
+- files:
+  - config.yaml
+  name: config
+  options:
+    disableNameSuffixHash: true
