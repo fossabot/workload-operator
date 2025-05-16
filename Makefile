@@ -170,6 +170,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 DEFAULTER_GEN ?= $(LOCALBIN)/defaulter-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+CRDOC ?= $(LOCALBIN)/crdoc
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.5.0
@@ -177,6 +178,9 @@ CONTROLLER_TOOLS_VERSION ?= v0.16.4
 DEFAULTER_GEN_VERSION ?= v0.32.3
 ENVTEST_VERSION ?= release-0.19
 GOLANGCI_LINT_VERSION ?= v2.1.5
+
+# renovate: datasource=go depName=fybrik.io/crdoc
+CRDOC_VERSION ?= v0.6.4
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -203,6 +207,10 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
+.PHONY: crdoc
+crdoc: ## Download crdoc locally if necessary.
+	$(call go-install-tool,$(CRDOC),fybrik.io/crdoc,$(CRDOC_VERSION))
+
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
 # $2 - package url which can be installed
@@ -218,3 +226,20 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+.PHONY: api-docs
+api-docs: crdoc kustomize
+	@{ \
+	set -e ;\
+	TMP_MANIFEST_DIR=$$(mktemp -d) ; \
+	cp -r config/crd/* $$TMP_MANIFEST_DIR; \
+	$(MAKE) CRD_OPTIONS=$(CRD_OPTIONS),maxDescLen=1200 MANIFEST_DIR=$$TMP_MANIFEST_DIR/bases manifests ;\
+	TMP_DIR=$$(mktemp -d) ; \
+	$(KUSTOMIZE) build $$TMP_MANIFEST_DIR -o $$TMP_DIR ;\
+	mkdir -p docs/api ;\
+	for crdmanifest in $$TMP_DIR/*; do \
+	  filename="$$(basename -s .compute.datumapis.com.yaml $$crdmanifest)" ;\
+	  filename="$${filename#apiextensions.k8s.io_v1_customresourcedefinition_}" ;\
+	  $(CRDOC) --resources $$crdmanifest --output docs/api/$$filename.md ;\
+	done;\
+	}
