@@ -9,7 +9,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/stretchr/testify v1.10.0
-	go.datum.net/network-services-operator v0.1.0
+	go.datum.net/network-services-operator v0.7.0
 	go.miloapis.com/milo v0.1.0
 	golang.org/x/crypto v0.39.0
 	golang.org/x/sync v0.15.0
