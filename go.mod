@@ -20,7 +20,7 @@ require (
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/gateway-api v1.2.1
-	sigs.k8s.io/multicluster-runtime v0.21.0-alpha.8
+	sigs.k8s.io/multicluster-runtime v0.21.0-alpha.9
 )
 
 require (
